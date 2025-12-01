@@ -30,13 +30,27 @@ export async function POST() {
     }
     
     // Sync Apple/iCloud ICS calendars if configured
-    const appleIcsUrls = process.env.APPLE_CALENDAR_ICS_URL
-    if (appleIcsUrls) {
-      const urls = appleIcsUrls.split(',').map(u => u.trim()).filter(Boolean)
-      for (const url of urls) {
-        const result = await syncIcsCalendar(url, 'apple_calendar')
-        results.push(result)
-      }
+    // Supports both formats:
+    // - APPLE_CALENDAR_ICS_URL (comma-separated)
+    // - APPLE_CALENDAR_ICS_URL_1, _2, _3, etc. (numbered)
+    const appleUrls: string[] = []
+    
+    // Check for comma-separated format
+    const appleIcsUrl = process.env.APPLE_CALENDAR_ICS_URL
+    if (appleIcsUrl) {
+      appleUrls.push(...appleIcsUrl.split(',').map(u => u.trim()).filter(Boolean))
+    }
+    
+    // Check for numbered format (_1, _2, _3, etc.)
+    for (let i = 1; i <= 10; i++) {
+      const url = process.env[`APPLE_CALENDAR_ICS_URL_${i}`]
+      if (url) appleUrls.push(url.trim())
+    }
+    
+    // Sync all Apple calendars
+    for (const url of appleUrls) {
+      const result = await syncIcsCalendar(url, 'apple_calendar')
+      results.push(result)
     }
     
     // Update sync metadata
@@ -45,7 +59,7 @@ export async function POST() {
       .upsert({
         id: 'default',
         last_ics_sync: outlookIcsUrl ? new Date().toISOString() : null,
-        last_apple_sync: appleIcsUrls ? new Date().toISOString() : null,
+        last_apple_sync: appleUrls.length > 0 ? new Date().toISOString() : null,
         updated_at: new Date().toISOString()
       })
     
