@@ -100,6 +100,11 @@ export default function Home() {
     localStorage.setItem('lifesynced_timezone', newTimezone)
     setShowTimezoneSelector(false)
   }
+
+  const handleLogout = async () => {
+    await fetch('/api/auth', { method: 'DELETE' })
+    window.location.href = '/login'
+  }
   
   // Format event time for tooltip
   const formatEventTime = (startTime: string, endTime: string) => {
@@ -601,6 +606,16 @@ export default function Home() {
               <span className="hidden sm:inline">Ignored Events</span>
               <span className="sm:hidden">Ignored</span>
               <span>({ignoredSeriesList.length + ignoredOccurrencesList.length})</span>
+            </button>
+
+            {/* Logout Button */}
+            <button
+              onClick={handleLogout}
+              className="px-3 sm:px-4 py-2 sm:py-2.5 bg-white border border-gray-200 text-gray-500 rounded-full hover:bg-gray-50 hover:text-gray-700 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium shadow-sm whitespace-nowrap flex-shrink-0"
+              title="Sign out"
+            >
+              <span>🚪</span>
+              <span className="hidden sm:inline">Sign Out</span>
             </button>
           </div>
           
