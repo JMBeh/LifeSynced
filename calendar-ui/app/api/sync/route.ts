@@ -109,16 +109,25 @@ async function syncIcsCalendar(url: string, source: 'ics' | 'apple_calendar'): P
       }
     }
     
-    // Batch upsert events
+    // Batch upsert events - deduplicate by ID first
     if (eventsToUpsert.length > 0) {
+      // Deduplicate events by ID (keep the last occurrence)
+      const uniqueEvents = new Map<string, Partial<Appointment>>()
+      for (const event of eventsToUpsert) {
+        if (event.id) {
+          uniqueEvents.set(event.id, event)
+        }
+      }
+      const dedupedEvents = Array.from(uniqueEvents.values())
+      
       const { error } = await supabase
         .from('appointments')
-        .upsert(eventsToUpsert, { onConflict: 'id' })
+        .upsert(dedupedEvents, { onConflict: 'id' })
       
       if (error) {
         result.errors.push(`Database error: ${error.message}`)
       } else {
-        result.added = eventsToUpsert.length
+        result.added = dedupedEvents.length
       }
     }
     

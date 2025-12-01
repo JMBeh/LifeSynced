@@ -8,12 +8,14 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const daysAhead = parseInt(searchParams.get('days') || '30', 10)
     
-    // Calculate date range
-    const startDate = new Date()
-    startDate.setHours(0, 0, 0, 0)
-    const endDate = new Date()
-    endDate.setDate(endDate.getDate() + daysAhead)
-    endDate.setHours(23, 59, 59, 999)
+    // Calculate date range - use UTC to match Supabase storage
+    const now = new Date()
+    const startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0))
+    const endDate = new Date(startDate)
+    endDate.setUTCDate(endDate.getUTCDate() + daysAhead)
+    endDate.setUTCHours(23, 59, 59, 999)
+    
+    console.log('Query range:', startDate.toISOString(), 'to', endDate.toISOString())
     
     // Fetch appointments within date range
     const { data: appointments, error: aptError } = await supabase
