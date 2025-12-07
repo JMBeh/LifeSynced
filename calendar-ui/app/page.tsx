@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 
 type ViewMode = 'day' | 'week' | '4week'
 
@@ -54,12 +54,14 @@ export default function Home() {
   const [isRecurringEvent, setIsRecurringEvent] = useState(false)
   
   // Personal events reveal state (default: always masked)
+  // This also gates access to 4-week view
   const [personalRevealed, setPersonalRevealed] = useState(false)
   const [canRevealPersonal, setCanRevealPersonal] = useState(true)
   const [showRevealModal, setShowRevealModal] = useState(false)
   const [revealPassword, setRevealPassword] = useState('')
   const [revealError, setRevealError] = useState('')
   const [revealLoading, setRevealLoading] = useState(false)
+  const [pendingViewMode, setPendingViewMode] = useState<ViewMode | null>(null)
   
   // Hover tooltip state
   const [hoveredEvent, setHoveredEvent] = useState<CalendarEvent | null>(null)
@@ -68,6 +70,11 @@ export default function Home() {
   // Timezone state
   const [timezone, setTimezone] = useState<string>('America/Los_Angeles')
   const [showTimezoneSelector, setShowTimezoneSelector] = useState(false)
+  
+  // Refs for focus management and accessibility
+  const revealModalRef = useRef<HTMLDivElement>(null)
+  const ignoreModalRef = useRef<HTMLDivElement>(null)
+  const mainContentRef = useRef<HTMLDivElement>(null)
   
   const timezoneOptions = [
     { value: 'America/Los_Angeles', label: 'Pacific (PST/PDT)', short: 'PT' },
@@ -131,6 +138,11 @@ export default function Home() {
         setPersonalRevealed(true)
         setShowRevealModal(false)
         setRevealPassword('')
+        // If user was trying to access 4-week view, switch to it now
+        if (pendingViewMode === '4week') {
+          setViewMode('4week')
+          setPendingViewMode(null)
+        }
         // Refresh events to get unmasked data
         await fetchEvents()
       } else {
@@ -143,16 +155,75 @@ export default function Home() {
     }
   }
   
+  // Handle view mode change with 4-week gate
+  const handleViewModeChange = useCallback((mode: ViewMode) => {
+    if (mode === '4week' && !personalRevealed) {
+      // Gate 4-week view behind personal reveal password
+      setPendingViewMode('4week')
+      setShowRevealModal(true)
+    } else {
+      setViewMode(mode)
+    }
+  }, [personalRevealed])
+  
   const handleHidePersonal = async () => {
     try {
       await fetch('/api/personal-reveal', { method: 'DELETE' })
       setPersonalRevealed(false)
+      // If currently on 4-week view, switch back to week view (since 4-week is gated)
+      if (viewMode === '4week') {
+        setViewMode('week')
+      }
       // Refresh events to get masked data
       await fetchEvents()
     } catch (error) {
       console.error('Error hiding personal events:', error)
     }
   }
+  
+  // Handle keyboard events for accessibility (escape to close modals)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showRevealModal) {
+          setShowRevealModal(false)
+          setRevealPassword('')
+          setRevealError('')
+          setPendingViewMode(null)
+        }
+        if (ignoreModalEvent) {
+          setIgnoreModalEvent(null)
+        }
+        if (showTimezoneSelector) {
+          setShowTimezoneSelector(false)
+        }
+        if (showIgnoredList) {
+          setShowIgnoredList(false)
+        }
+        // Clear tooltip on escape
+        if (hoveredEvent) {
+          setHoveredEvent(null)
+        }
+      }
+    }
+    
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [showRevealModal, ignoreModalEvent, showTimezoneSelector, showIgnoredList, hoveredEvent])
+  
+  // Focus trap for modals (accessibility)
+  useEffect(() => {
+    if (showRevealModal && revealModalRef.current) {
+      const firstInput = revealModalRef.current.querySelector('input')
+      firstInput?.focus()
+    }
+    if (ignoreModalEvent && ignoreModalRef.current) {
+      const firstButton = ignoreModalRef.current.querySelector('button:not([aria-hidden="true"])')
+      if (firstButton instanceof HTMLElement) {
+        firstButton.focus()
+      }
+    }
+  }, [showRevealModal, ignoreModalEvent])
   
   const handleTimezoneChange = (newTimezone: string) => {
     setTimezone(newTimezone)
@@ -578,8 +649,8 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-3 sm:p-4 md:p-6">
-      <div className="max-w-[98vw] mx-auto">
+    <div className="min-h-screen bg-gray-50 p-3 sm:p-4 md:p-6 safe-area-inset">
+      <div className="max-w-[98vw] mx-auto" ref={mainContentRef} role="main" aria-label="LifeSynced Calendar">
         {/* Header */}
         <div className="mb-4 sm:mb-6">
           {/* Title and View Mode */}
@@ -604,39 +675,58 @@ export default function Home() {
             </div>
             
             {/* View Mode Buttons */}
-            <div className="flex gap-0.5 sm:gap-1 bg-gray-100 p-0.5 sm:p-1 rounded-lg self-start overflow-x-auto">
-              {(['day', 'week', '4week'] as ViewMode[]).map((mode) => (
-              <button
-                  key={mode}
-                  onClick={() => setViewMode(mode)}
-                  className={`px-2.5 sm:px-4 md:px-5 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
-                    viewMode === mode 
-                      ? 'bg-white text-gray-900 shadow-sm' 
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  {mode === '4week' ? '4-Week' : mode.charAt(0).toUpperCase() + mode.slice(1)}
-              </button>
-              ))}
+            <div 
+              className="flex gap-0.5 sm:gap-1 bg-gray-100 p-0.5 sm:p-1 rounded-lg self-start overflow-x-auto"
+              role="tablist"
+              aria-label="Calendar view options"
+            >
+              {(['day', 'week', '4week'] as ViewMode[]).map((mode) => {
+                const isLocked = mode === '4week' && !personalRevealed
+                return (
+                  <button
+                    key={mode}
+                    onClick={() => handleViewModeChange(mode)}
+                    role="tab"
+                    aria-selected={viewMode === mode}
+                    aria-label={mode === '4week' 
+                      ? (isLocked ? '4-Week view (requires password)' : '4-Week view') 
+                      : `${mode.charAt(0).toUpperCase() + mode.slice(1)} view`}
+                    className={`px-2.5 sm:px-4 md:px-5 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-medium transition-all whitespace-nowrap flex items-center gap-1 ${
+                      viewMode === mode 
+                        ? 'bg-white text-gray-900 shadow-sm' 
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    {mode === '4week' && isLocked && <span className="text-[10px] sm:text-xs">🔒</span>}
+                    {mode === '4week' ? '4-Week' : mode.charAt(0).toUpperCase() + mode.slice(1)}
+                  </button>
+                )
+              })}
             </div>
           </div>
           
           {/* Action Buttons Row */}
-          <div className="flex gap-2 sm:gap-3 overflow-x-auto pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 sm:overflow-visible sm:flex-wrap items-center scrollbar-hide">
+          <div 
+            className="flex gap-2 sm:gap-3 overflow-x-auto pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 sm:overflow-visible sm:flex-wrap items-center scrollbar-hide"
+            role="toolbar"
+            aria-label="Calendar controls"
+          >
             <button
               onClick={handleRefresh}
-              className="px-3 sm:px-4 py-2 sm:py-2.5 bg-white border border-gray-200 text-gray-700 rounded-full hover:bg-gray-50 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium shadow-sm whitespace-nowrap flex-shrink-0"
+              aria-label="Refresh calendar data"
+              className="px-3 sm:px-4 py-2 sm:py-2.5 bg-white border border-gray-200 text-gray-700 rounded-full hover:bg-gray-50 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium shadow-sm whitespace-nowrap flex-shrink-0 focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
             >
-              <span>🔄</span>
+              <span aria-hidden="true">🔄</span>
               <span className="hidden xs:inline">Refresh</span>
             </button>
             
             {(viewMode === 'week' || viewMode === '4week') && (
-              <label className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 bg-white border border-gray-200 rounded-full cursor-pointer hover:bg-gray-50 text-xs sm:text-sm text-gray-700 font-medium shadow-sm whitespace-nowrap flex-shrink-0">
+              <label className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 bg-white border border-gray-200 rounded-full cursor-pointer hover:bg-gray-50 text-xs sm:text-sm text-gray-700 font-medium shadow-sm whitespace-nowrap flex-shrink-0 focus-within:ring-2 focus-within:ring-blue-400 focus-within:ring-offset-2">
                 <input
                   type="checkbox"
                   checked={hideWeekends}
                   onChange={(e) => setHideWeekends(e.target.checked)}
+                  aria-label="Hide weekend days"
                   className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span className="hidden sm:inline">Hide Weekends</span>
@@ -646,28 +736,38 @@ export default function Home() {
             
             <button
               onClick={() => setDetectOverlap(!detectOverlap)}
-              className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-full flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium shadow-sm transition-all whitespace-nowrap flex-shrink-0 ${
+              aria-pressed={detectOverlap}
+              aria-label={detectOverlap ? 'Overlap detection enabled - click to disable' : 'Enable overlap detection between work and personal events'}
+              className={`px-4 sm:px-5 py-2.5 sm:py-3 rounded-full flex items-center gap-2 sm:gap-2.5 text-sm sm:text-base font-semibold shadow-md transition-all whitespace-nowrap flex-shrink-0 transform hover:scale-[1.02] active:scale-[0.98] ${
                 detectOverlap 
-                  ? 'bg-orange-500 text-white hover:bg-orange-600 border border-orange-500' 
-                  : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
+                  ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white hover:from-orange-600 hover:to-amber-600 border-2 border-orange-400 shadow-orange-200 ring-2 ring-orange-300 ring-offset-1' 
+                  : 'bg-gradient-to-r from-amber-50 to-orange-50 text-orange-700 border-2 border-orange-300 hover:border-orange-400 hover:from-amber-100 hover:to-orange-100 shadow-orange-100'
               }`}
             >
-              <span>⚠️</span>
+              <span className="text-base sm:text-lg" aria-hidden="true">⚠️</span>
               <span className="hidden sm:inline">Detect Overlap</span>
               <span className="sm:hidden">Overlap</span>
+              {detectOverlap && overlapCount > 0 && (
+                <span className="bg-white/30 text-white px-1.5 py-0.5 rounded-full text-xs font-bold" aria-label={`${overlapCount} conflicts found`}>
+                  {overlapCount}
+                </span>
+              )}
             </button>
             
             <button
               onClick={() => setShowIgnoredList(!showIgnoredList)}
-              className="px-3 sm:px-4 py-2 sm:py-2.5 bg-white border border-gray-200 rounded-full hover:bg-gray-50 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium text-gray-700 shadow-sm whitespace-nowrap flex-shrink-0"
+              aria-expanded={showIgnoredList}
+              aria-label={`${showIgnoredList ? 'Hide' : 'Show'} ignored events list (${ignoredSeriesList.length + ignoredOccurrencesList.length} ignored)`}
+              className="px-3 sm:px-4 py-2 sm:py-2.5 bg-white border border-gray-200 rounded-full hover:bg-gray-50 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium text-gray-700 shadow-sm whitespace-nowrap flex-shrink-0 focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
             >
-              <span>👁️</span>
+              <span aria-hidden="true">👁️</span>
               <span className="hidden sm:inline">Ignored Events</span>
               <span className="sm:hidden">Ignored</span>
-              <span>({ignoredSeriesList.length + ignoredOccurrencesList.length})</span>
+              <span aria-hidden="true">({ignoredSeriesList.length + ignoredOccurrencesList.length})</span>
             </button>
             
             {/* Personal Events Reveal Toggle - always show since events are masked by default */}
+            {/* Also gates 4-week view access */}
             <button
               onClick={() => {
                 if (personalRevealed) {
@@ -677,20 +777,21 @@ export default function Home() {
                 }
               }}
               disabled={!personalRevealed && !canRevealPersonal}
-              className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-full flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium shadow-sm transition-all whitespace-nowrap flex-shrink-0 ${
+              aria-pressed={personalRevealed}
+              aria-label={personalRevealed 
+                ? 'Personal events revealed and 4-week view unlocked. Click to hide and lock.' 
+                : canRevealPersonal 
+                  ? 'Personal events hidden and 4-week view locked. Click to reveal.' 
+                  : 'Personal reveal password not configured on server.'}
+              className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-full flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium shadow-sm transition-all whitespace-nowrap flex-shrink-0 focus:ring-2 focus:ring-green-400 focus:ring-offset-2 ${
                 personalRevealed 
                   ? 'bg-green-500 text-white hover:bg-green-600 border border-green-500' 
                   : !canRevealPersonal
                     ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
                     : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
               }`}
-              title={personalRevealed 
-                ? 'Personal event names are visible. Click to hide.' 
-                : canRevealPersonal 
-                  ? 'Personal event names are hidden. Click to reveal.' 
-                  : 'Personal reveal password not configured on server.'}
             >
-              <span>{personalRevealed ? '🔓' : '🔒'}</span>
+              <span aria-hidden="true">{personalRevealed ? '🔓' : '🔒'}</span>
               <span className="hidden sm:inline">{personalRevealed ? 'Personal Revealed' : 'Personal Hidden'}</span>
               <span className="sm:hidden">{personalRevealed ? 'Revealed' : 'Hidden'}</span>
             </button>
@@ -698,10 +799,10 @@ export default function Home() {
             {/* Logout Button */}
             <button
               onClick={handleLogout}
-              className="px-3 sm:px-4 py-2 sm:py-2.5 bg-white border border-gray-200 text-gray-500 rounded-full hover:bg-gray-50 hover:text-gray-700 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium shadow-sm whitespace-nowrap flex-shrink-0"
-              title="Sign out"
+              aria-label="Sign out of LifeSynced"
+              className="px-3 sm:px-4 py-2 sm:py-2.5 bg-white border border-gray-200 text-gray-500 rounded-full hover:bg-gray-50 hover:text-gray-700 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium shadow-sm whitespace-nowrap flex-shrink-0 focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
             >
-              <span>🚪</span>
+              <span aria-hidden="true">🚪</span>
               <span className="hidden sm:inline">Sign Out</span>
             </button>
           </div>
@@ -936,27 +1037,30 @@ export default function Home() {
               
               {/* Calendar Header with Date Range and Navigation */}
               <div className="flex justify-between items-center px-3 sm:px-5 py-3 sm:py-4 border-b border-gray-100">
-                <h2 className="text-sm sm:text-lg md:text-xl font-semibold text-gray-900">{formatDateRange()}</h2>
-                <div className="flex items-center gap-1 sm:gap-2">
+                <h2 className="text-sm sm:text-lg md:text-xl font-semibold text-gray-900" aria-live="polite">{formatDateRange()}</h2>
+                <nav className="flex items-center gap-1 sm:gap-2" aria-label="Week navigation">
                   <button 
                     onClick={() => navigateWeek(-1)} 
-                    className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm"
+                    aria-label="Previous week"
+                    className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm focus:ring-2 focus:ring-blue-400 focus:ring-offset-1"
                   >
-                    ←
+                    <span aria-hidden="true">←</span>
                   </button>
                   <button 
                     onClick={goToToday} 
-                    className="px-2.5 sm:px-4 py-1.5 sm:py-2 bg-gray-100 rounded-full text-gray-700 hover:bg-gray-200 font-medium text-xs sm:text-sm"
+                    aria-label="Go to today"
+                    className="px-2.5 sm:px-4 py-1.5 sm:py-2 bg-gray-100 rounded-full text-gray-700 hover:bg-gray-200 font-medium text-xs sm:text-sm focus:ring-2 focus:ring-blue-400 focus:ring-offset-1"
                   >
                     Today
                   </button>
                   <button 
                     onClick={() => navigateWeek(1)} 
-                    className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm"
+                    aria-label="Next week"
+                    className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm focus:ring-2 focus:ring-blue-400 focus:ring-offset-1"
                   >
-                    →
+                    <span aria-hidden="true">→</span>
                   </button>
-                </div>
+                </nav>
               </div>
               
               {/* Scrollable Grid Container for Mobile */}
@@ -1116,15 +1220,15 @@ export default function Home() {
             )}
             
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-0 p-3 sm:p-4 border-b border-gray-100">
-              <h2 className="text-base sm:text-xl font-semibold text-gray-900">
+              <h2 className="text-base sm:text-xl font-semibold text-gray-900" aria-live="polite">
                 <span className="sm:hidden">{selectedDay.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
                 <span className="hidden sm:inline">{selectedDay.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</span>
               </h2>
-              <div className="flex items-center gap-1 sm:gap-2">
-                <button onClick={() => navigateDay(-1)} className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm">←</button>
-                <button onClick={goToToday} className="px-2.5 sm:px-4 py-1.5 sm:py-2 bg-gray-100 rounded-full text-gray-700 hover:bg-gray-200 font-medium text-xs sm:text-sm">Today</button>
-                <button onClick={() => navigateDay(1)} className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm">→</button>
-            </div>
+              <nav className="flex items-center gap-1 sm:gap-2" aria-label="Day navigation">
+                <button onClick={() => navigateDay(-1)} aria-label="Previous day" className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm focus:ring-2 focus:ring-blue-400 focus:ring-offset-1"><span aria-hidden="true">←</span></button>
+                <button onClick={goToToday} aria-label="Go to today" className="px-2.5 sm:px-4 py-1.5 sm:py-2 bg-gray-100 rounded-full text-gray-700 hover:bg-gray-200 font-medium text-xs sm:text-sm focus:ring-2 focus:ring-blue-400 focus:ring-offset-1">Today</button>
+                <button onClick={() => navigateDay(1)} aria-label="Next day" className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm focus:ring-2 focus:ring-blue-400 focus:ring-offset-1"><span aria-hidden="true">→</span></button>
+            </nav>
             </div>
             <div className="p-3 sm:p-5">
               {getEventsForDate(selectedDay).length === 0 ? (
@@ -1211,12 +1315,12 @@ export default function Home() {
             )}
             
             <div className="flex justify-between items-center p-3 sm:p-4 border-b border-gray-100">
-              <h2 className="text-base sm:text-xl font-semibold text-gray-900">4-Week</h2>
-              <div className="flex items-center gap-1 sm:gap-2">
-                <button onClick={() => navigateMonth(-1)} className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm">←</button>
-                <button onClick={goToToday} className="px-2.5 sm:px-4 py-1.5 sm:py-2 bg-gray-100 rounded-full text-gray-700 hover:bg-gray-200 font-medium text-xs sm:text-sm">Today</button>
-                <button onClick={() => navigateMonth(1)} className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm">→</button>
-            </div>
+              <h2 className="text-base sm:text-xl font-semibold text-gray-900" aria-live="polite">4-Week View</h2>
+              <nav className="flex items-center gap-1 sm:gap-2" aria-label="4-week navigation">
+                <button onClick={() => navigateMonth(-1)} aria-label="Previous 4 weeks" className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm focus:ring-2 focus:ring-blue-400 focus:ring-offset-1"><span aria-hidden="true">←</span></button>
+                <button onClick={goToToday} aria-label="Go to today" className="px-2.5 sm:px-4 py-1.5 sm:py-2 bg-gray-100 rounded-full text-gray-700 hover:bg-gray-200 font-medium text-xs sm:text-sm focus:ring-2 focus:ring-blue-400 focus:ring-offset-1">Today</button>
+                <button onClick={() => navigateMonth(1)} aria-label="Next 4 weeks" className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm focus:ring-2 focus:ring-blue-400 focus:ring-offset-1"><span aria-hidden="true">→</span></button>
+            </nav>
                   </div>
             <div className={`grid gap-1 sm:gap-2 p-2 sm:p-4 ${hideWeekends ? 'grid-cols-5' : 'grid-cols-7'}`}>
               {getMonthDates().map((date) => {
@@ -1328,21 +1432,34 @@ export default function Home() {
 
         {/* Ignore Choice Modal */}
         {ignoreModalEvent && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-            <div className="bg-white rounded-t-xl sm:rounded-xl shadow-xl p-4 sm:p-6 max-w-md w-full">
-              <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">Ignore Event</h3>
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ignore-modal-title"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setIgnoreModalEvent(null)
+              }
+            }}
+          >
+            <div 
+              ref={ignoreModalRef}
+              className="bg-white rounded-t-xl sm:rounded-xl shadow-xl p-4 sm:p-6 max-w-md w-full"
+            >
+              <h3 id="ignore-modal-title" className="text-base sm:text-lg font-semibold text-gray-900 mb-2">Ignore Event</h3>
               <p className="text-gray-600 mb-3 sm:mb-4 text-sm sm:text-base truncate">
                 &ldquo;{ignoreModalEvent.subject}&rdquo;
               </p>
               
               {isRecurringEvent ? (
-                <div className="space-y-2 sm:space-y-3">
+                <div className="space-y-2 sm:space-y-3" role="group" aria-label="Ignore options">
                   <p className="text-xs sm:text-sm text-gray-500 mb-3 sm:mb-4">
                     This event is part of a recurring series. What would you like to ignore?
                   </p>
                   <button
                     onClick={() => ignoreOccurrence(ignoreModalEvent)}
-                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-100 text-gray-800 rounded-lg hover:bg-gray-200 active:bg-gray-200 font-medium text-left"
+                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-100 text-gray-800 rounded-lg hover:bg-gray-200 active:bg-gray-200 font-medium text-left focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
                   >
                     <div className="font-medium text-sm sm:text-base">This occurrence only</div>
                     <div className="text-xs sm:text-sm text-gray-500">
@@ -1358,7 +1475,7 @@ export default function Home() {
                   </button>
                   <button
                     onClick={() => ignoreSeries(ignoreModalEvent)}
-                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-blue-50 text-blue-800 rounded-lg hover:bg-blue-100 active:bg-blue-100 font-medium text-left border border-blue-200"
+                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-blue-50 text-blue-800 rounded-lg hover:bg-blue-100 active:bg-blue-100 font-medium text-left border border-blue-200 focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
                   >
                     <div className="font-medium text-sm sm:text-base">Entire series</div>
                     <div className="text-xs sm:text-sm text-blue-600">All past and future occurrences</div>
@@ -1371,7 +1488,7 @@ export default function Home() {
                   </p>
                   <button
                     onClick={() => ignoreSeries(ignoreModalEvent)}
-                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:bg-blue-600 font-medium text-sm sm:text-base"
+                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:bg-blue-600 font-medium text-sm sm:text-base focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
                   >
                     Ignore Event
                   </button>
@@ -1380,7 +1497,7 @@ export default function Home() {
               
               <button
                 onClick={() => setIgnoreModalEvent(null)}
-                className="w-full mt-2 sm:mt-3 px-4 py-2 text-gray-600 hover:text-gray-800 font-medium text-sm sm:text-base"
+                className="w-full mt-2 sm:mt-3 px-4 py-2 text-gray-600 hover:text-gray-800 font-medium text-sm sm:text-base focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 rounded-lg"
               >
                 Cancel
               </button>
@@ -1390,16 +1507,38 @@ export default function Home() {
 
         {/* Personal Events Reveal Modal */}
         {showRevealModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-            <div className="bg-white rounded-t-xl sm:rounded-xl shadow-xl p-4 sm:p-6 max-w-md w-full">
-              <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">Reveal Personal Events</h3>
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reveal-modal-title"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setShowRevealModal(false)
+                setRevealPassword('')
+                setRevealError('')
+                setPendingViewMode(null)
+              }
+            }}
+          >
+            <div 
+              ref={revealModalRef}
+              className="bg-white rounded-t-xl sm:rounded-xl shadow-xl p-4 sm:p-6 max-w-md w-full"
+            >
+              <h3 id="reveal-modal-title" className="text-base sm:text-lg font-semibold text-gray-900 mb-2">
+                {pendingViewMode === '4week' ? 'Unlock 4-Week View' : 'Reveal Personal Events'}
+              </h3>
               <p className="text-gray-600 mb-4 text-sm">
-                Enter the reveal password to see personal calendar event names. This is separate from the app access password.
+                {pendingViewMode === '4week' 
+                  ? 'The 4-week view requires authentication. Enter the reveal password to unlock both 4-week view and personal event details.'
+                  : 'Enter the reveal password to see personal calendar event names. This also unlocks the 4-week view.'}
               </p>
               
               <form onSubmit={handleRevealSubmit} className="space-y-4">
                 <div>
+                  <label htmlFor="reveal-password" className="sr-only">Reveal password</label>
                   <input
+                    id="reveal-password"
                     type="password"
                     value={revealPassword}
                     onChange={(e) => setRevealPassword(e.target.value)}
@@ -1407,19 +1546,20 @@ export default function Home() {
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all text-base bg-white placeholder-gray-400"
                     style={{ color: '#111827', WebkitTextFillColor: '#111827' }}
                     autoFocus
+                    aria-describedby={revealError ? 'reveal-error' : undefined}
                   />
                 </div>
                 
                 {revealError && (
-                  <p className="text-red-500 text-sm">{revealError}</p>
+                  <p id="reveal-error" className="text-red-500 text-sm" role="alert">{revealError}</p>
                 )}
                 
                 <button
                   type="submit"
                   disabled={revealLoading || !revealPassword}
-                  className="w-full px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-300 font-medium transition-colors"
+                  className="w-full px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed font-medium transition-colors focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
                 >
-                  {revealLoading ? 'Verifying...' : 'Reveal Events'}
+                  {revealLoading ? 'Verifying...' : (pendingViewMode === '4week' ? 'Unlock & Reveal' : 'Reveal Events')}
                 </button>
               </form>
               
@@ -1428,8 +1568,9 @@ export default function Home() {
                   setShowRevealModal(false)
                   setRevealPassword('')
                   setRevealError('')
+                  setPendingViewMode(null)
                 }}
-                className="w-full mt-3 px-4 py-2 text-gray-600 hover:text-gray-800 font-medium"
+                className="w-full mt-3 px-4 py-2 text-gray-600 hover:text-gray-800 font-medium focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 rounded-lg"
               >
                 Cancel
               </button>

@@ -4,26 +4,18 @@
 
 :root {
   --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
+  --background-start-rgb: 250, 250, 250;
   --background-end-rgb: 255, 255, 255;
+  /* Focus ring colors for accessibility */
+  --focus-ring-color: 59, 130, 246;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
-  }
-}
-
+/* Force light mode for the calendar app */
 body {
   color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+  background: rgb(var(--background-start-rgb));
+  /* Prevent pull-to-refresh on mobile */
+  overscroll-behavior-y: contain;
 }
 
 /* Hide scrollbar for horizontal scroll areas on mobile */
@@ -35,11 +27,17 @@ body {
   display: none;  /* Chrome, Safari and Opera */
 }
 
-/* Touch-friendly tap targets */
+/* Touch-friendly tap targets (WCAG 2.5.5 Target Size) */
 @media (hover: none) and (pointer: coarse) {
-  button, a, input, select {
+  button, a, [role="button"], input[type="checkbox"], input[type="radio"] {
     min-height: 44px;
     min-width: 44px;
+  }
+  
+  /* Ensure inputs have adequate touch targets */
+  input, select, textarea {
+    min-height: 44px;
+    font-size: 16px; /* Prevents iOS zoom on focus */
   }
 }
 
@@ -61,6 +59,117 @@ html {
     padding-left: max(0.75rem, env(safe-area-inset-left));
     padding-right: max(0.75rem, env(safe-area-inset-right));
     padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+}
+
+/* ===== ACCESSIBILITY IMPROVEMENTS ===== */
+
+/* Ensure focus is visible for keyboard navigation */
+:focus-visible {
+  outline: 2px solid rgb(var(--focus-ring-color));
+  outline-offset: 2px;
+}
+
+/* Remove default focus styles for mouse users, keep for keyboard */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* High contrast focus for buttons and interactive elements */
+button:focus-visible,
+[role="button"]:focus-visible,
+a:focus-visible {
+  outline: 2px solid rgb(var(--focus-ring-color));
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(var(--focus-ring-color), 0.25);
+}
+
+/* Skip to main content link (for screen readers) */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: #000;
+  color: #fff;
+  padding: 8px 16px;
+  z-index: 100;
+  transition: top 0.3s;
+}
+
+.skip-link:focus {
+  top: 0;
+}
+
+/* ===== REDUCED MOTION ===== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ===== MOBILE OPTIMIZATIONS ===== */
+
+/* Better touch scrolling */
+.overflow-x-auto,
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent horizontal scroll on mobile */
+@media (max-width: 640px) {
+  html, body {
+    overflow-x: hidden;
+  }
+}
+
+/* Improve modal backdrop on mobile */
+@media (max-width: 640px) {
+  [role="dialog"] {
+    /* Full height for mobile modals */
+    max-height: 90vh;
+    max-height: 90dvh;
+  }
+}
+
+/* ===== OVERLAP BUTTON PULSE ANIMATION ===== */
+@keyframes gentle-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(251, 146, 60, 0);
+  }
+}
+
+/* Apply pulse to overlap button when not active */
+button[aria-pressed="false"][aria-label*="overlap"]:not(:hover) {
+  animation: gentle-pulse 2s ease-in-out infinite;
+}
+
+/* ===== CUSTOM SCROLLBAR FOR DESKTOP ===== */
+@media (hover: hover) {
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #a1a1a1;
   }
 }
 
