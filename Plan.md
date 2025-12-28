@@ -192,6 +192,42 @@ LifeSynced is a personal/family productivity tool that unifies work (Outlook) an
 - Nothing important slips through the cracks
 - Family feels less stressed about event coordination
 
+### Phase 2B: Agentic Commerce - Shopping on Behalf of User (Future)
+**Goal:** AI agent monitors for discounts and purchases items on behalf of user within budget constraints
+
+**The Challenge:** True agentic commerce—delegating purchasing decisions to an AI agent that understands user preferences, monitors prices, and acts autonomously within defined boundaries. Requires trust, budget management, and purchase verification.
+
+**Use Cases:**
+- User needs birthday gift → Agent monitors prices, flags when discount hits threshold, or purchases automatically
+- Recurring household items → Agent tracks prices, buys when price drops below average
+- Event preparation → Agent purchases items needed for upcoming calendar events (gifts, supplies)
+- Budget-aware shopping → Agent respects monthly/event budgets, asks for approval if over limit
+
+**Tasks:**
+- [ ] Define purchase categories and preferences (gifts, household, event supplies)
+- [ ] Integrate shopping APIs (Amazon, Target, etc.) for price monitoring
+- [ ] Budget management system (per-event budgets, monthly limits)
+- [ ] Purchase approval workflow (auto-purchase vs. flag-for-review)
+- [ ] Price tracking and discount detection (historical price data)
+- [ ] Purchase verification and receipt storage
+- [ ] "Shopping list" generation from calendar events (what's needed for upcoming events)
+- [ ] Natural language: "Monitor X for birthday gift, budget $50, buy if price drops 20%"
+- [ ] Integration with Phase 2A (life event planning) - auto-generate shopping needs
+
+**Success Criteria:**
+- Agent successfully monitors prices and detects discounts
+- Purchases respect budget constraints
+- User trusts agent to make routine purchases
+- Shopping needs automatically generated from calendar events
+- Receipts and purchase history tracked
+
+**Technical Considerations:**
+- OAuth integration with shopping platforms
+- Secure payment method storage (tokenization)
+- Purchase confirmation emails/notifications
+- Refund/return handling
+- Privacy: user controls what agent can purchase
+
 ### Phase 3: User Authentication & Multi-User (Week 3-4)
 **Goal:** Enable family members to access with their own accounts
 
@@ -276,3 +312,22 @@ LifeSynced is a personal/family productivity tool that unifies work (Outlook) an
 - Personalized scheduling insights
 - Proactive focus time recommendations
 - Meeting overload warnings
+
+---
+
+## 🎯 NEXT FOCUS
+
+**Priority:** Phase 2A - AI Agent for Life Event Planning
+
+**Current Status:** Phase 1 complete (core calendar view working). Ready to build proactive AI agent.
+
+**Next Steps:**
+1. Define important life events taxonomy
+2. Build event importance classifier
+3. Implement proactive reminder system with prep suggestions
+4. Test with real family calendar scenarios
+5. Future: Phase 2B (Agentic Commerce) after Phase 2A is stable
+
+---
+
+**Last Updated:** 2025-12-24
