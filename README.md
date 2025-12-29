@@ -6,7 +6,9 @@
 ![Status](https://img.shields.io/badge/Status-Active-green)
 ![Stack](https://img.shields.io/badge/Stack-Next.js%2014%20%7C%20Supabase%20%7C%20Tailwind-blue)
 
-![Calendar View](calendar-ui/e2e-results/01-calendar.png)
+![LifeSynced Calendar with Overlap Detection](calendar-ui/e2e-results/01-calendar.png)
+
+*Unified calendar view showing work and personal events with overlap detection highlighting 61 conflicts*
 
 ## 🚀 Quick Start
 
