@@ -96,7 +96,7 @@ Adding **an AI agent that proactively reminds me of important life events** (ann
 <summary><strong>📚 Development Notes</strong></summary>
 
 - See `CLAUDE.md` for detailed technical setup and development commands.
-- See `Plan.md` for detailed product requirements and architecture decisions.
+- See `PLAN.md` for detailed product requirements and architecture decisions.
 - See `BUILD_LOG.md` for chronological progress.
 
 </details>
